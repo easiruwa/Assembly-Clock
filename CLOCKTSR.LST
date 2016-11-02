@@ -1,0 +1,541 @@
+Microsoft (R) Macro Assembler Version 6.11		    10/31/16 02:23:17
+clocktsr						     Page 1 - 1
+
+
+				TITLE clocktsr
+
+				; Author: Eseosa Asiruwa
+				; Last update: October 30, 2016
+
+				; TSR (Terminate, Stay Resident)
+				; This program builds off of the small model clock program but is instead,
+				; a tiny model that installs a resident routine so that the clock is updated
+				; continously until the machine is rebooted. This program also makes sure that
+				; other pgrams can run properly in the presence of this TSR
+
+				.8086
+				.model tiny
+
+ 0000				.code
+
+					org	100h
+
+ 0100  E9 0296			top:	jmp	start
+
+
+ 0103 30 31 32 33 34 35		time byte "0123456789"
+       36 37 38 39
+ 010D 3A			colon byte ":"
+ 010E  0001 [			hours byte 1 DUP(?)
+        00
+       ]
+ 010F  0001 [			minutes byte 1 DUP(?)
+        00
+       ]
+ 0110  0001 [			seconds byte 1 DUP(?)
+        00
+       ]
+ 0111 00			rshift byte 0
+ 0112 00			lshift byte 0
+ 0113 00			switch byte 0
+ 0114 00			hourx byte 0
+
+ 0115				OutClock PROC
+					; STDCALL 16-bit value parameter
+					; Output time in hr:min:secs depending on whether the user has toggled
+					; for the clock to be in 12hr or 24hr format
+
+ 0115  55				push bp				; Set up stack for retrieving parameter
+ 0116  8B EC				mov bp, sp
+
+ 0118  50				push ax				; Pushed used registers to the stack
+ 0119  53				push bx
+ 011A  51				push cx
+ 011B  52				push dx
+
+ 011C  B9 0004				mov	cx, 4			; Move 4 to CX for shifting
+ 011F  B4 0E				mov	ah, 0Eh			; Bios output routine
+
+ 0121  50				push ax				; Save values that are in AX
+ 0122  51				push cx				; and CX
+ 0123  B4 02				mov ah, 02h			; Move to ah bios routine to get time
+ 0125  CD 1A				int 1Ah				; in BCD
+ 0127  2E: 88 2E 010E R			mov cs:[hours], ch		; The function returns hours in ch, min
+ 012C  2E: 88 0E 010F R			mov cs:[minutes], cl		; in cl, and secs in dh. Move these 
+ 0131  2E: 88 36 0110 R			mov cs:[seconds], dh		; values into mem to be used later
+ 0136  59				pop cx				; Pop back orginal values to CX
+ 0137  58				pop ax				; and ax
+
+ 0138  2E: 80 3E 0113 R			cmp cs:[switch], 0		; Check if time is shown in 12hr or 24
+       00
+ 013E  75 38				jne miltime			; If switch is 0FFh, show in 24hr
+ 0140  2E: 80 3E 010E R			cmp cs:[hours], 12		; If 12hr, check if current time is PM
+       0C
+ 0146  7C 15				jl sethourx			; if its AM, jump to seperate instrc
+ 0148  50				push ax				; if it is, time must be adjusted
+ 0149  2E: A0 010E R			mov al, cs:[hours]		; Move current BCD hours to al
+ 014D  2C 12				sub al, 12h			; subtract 12h from hours and
+ 014F  2F				das				; new value is adjusted
+ 0150  2E: A2 010E R			mov cs:[hours], al		; move new found val back to mem
+ 0154  58				pop ax				; restore AX
+ 0155  2E: C6 06 0114 R			mov cs:[hourx], 1		; Adjust var to reflect that time in PM
+       01
+ 015B  EB 06				jmp checkhr			; Jump to check for 0
+ 015D				sethourx:
+ 015D  2E: C6 06 0114 R			mov cs:[hourx], 0		; If the time is AM, change var to 0
+       00
+ 0163				checkhr:
+ 0163  2E: 80 3E 010E R			cmp cs:[hours], 0		; Check if current hour is 0
+       00
+ 0169  7F 0D				jg miltime			; If it is greater, jump to print time
+ 016B  50				push ax				; If not, save AX to prepate for adjust
+ 016C  2E: A0 010E R			mov al, cs:[hours]		; Move current hours to AX
+ 0170  04 12				add al, 12h			; Add 12h to current hours and
+ 0172  27				daa				; the new value is adjusted
+ 0173  2E: A2 010E R			mov cs:[hours], al		; Move new found val back to memory
+ 0177  58				pop ax				; Restore AX register
+ 0178				miltime:
+ 0178  51				push cx				; Save CX register
+ 0179  B9 0004				mov cx, 4			; Move to CX 4 for shifting
+ 017C  2E: 8A 1E 010E R			mov bl, cs:[hours]		; Move current hrs to bl for shifting
+ 0181  D3 EB				shr bx, cl			; Shift to isolate first nybble
+
+ 0183  B0 20				mov al, 20h
+ 0185  CD 10				int 10h
+
+ 0187  2E: 8A 87 0103 R			mov al, cs:time[bx]		; Move found nybble char to al
+ 018C  CD 10				int 10h				; Print char to screen
+ 018E  2E: 8A 1E 010E R			mov bl, cs:[hours]		; Move hours back to bl
+ 0193  83 E3 0F				and bx, 000Fh			; Isolate second nybble
+ 0196  2E: 8A 87 0103 R			mov al, cs:time[bx]		; Move second nybble char to al
+ 019B  CD 10				int 10h				; Print char to screen
+
+ 019D  2E: A0 010D R			mov al, cs:[colon]		; Move colon char to al
+ 01A1  CD 10				int 10h				; Print char to screen
+
+ 01A3  2E: 8A 1E 010F R			mov bl, cs:[minutes]		; Move current mins to bl for shifting
+ 01A8  D3 EB				shr bx, cl			; Shift to isolate first nybble
+ 01AA  2E: 8A 87 0103 R			mov al, cs:time[bx]		; Move found nybble char to al
+ 01AF  CD 10				int 10h				; Print char to screen
+ 01B1  2E: 8A 1E 010F R			mov bl, cs:[minutes]		; Move minutes back to bl
+ 01B6  83 E3 0F				and bx, 000Fh			; Isolate second nybble
+ 01B9  2E: 8A 87 0103 R			mov al, cs:time[bx]		; Move second found nybble char to al
+ 01BE  CD 10				int 10h				; Print char to screen
+
+ 01C0  2E: A0 010D R			mov al, cs:[colon]		; Move colon char to al
+ 01C4  CD 10				int 10h				; Print to screen
+
+ 01C6  2E: 8A 1E 0110 R			mov bl, cs:[seconds]		; Move current secs to bl for shifting
+ 01CB  D3 EB				shr bx, cl			; Shift to isolate first nybble
+ 01CD  2E: 8A 87 0103 R			mov al, cs:time[bx]		; Move found nybble char to al
+ 01D2  CD 10				int 10h				; Print char to screen
+ 01D4  2E: 8A 1E 0110 R			mov bl, cs:[seconds]		; Move secs back to bl
+ 01D9  83 E3 0F				and bx, 000Fh			; Isolate second nybble
+ 01DC  2E: 8A 87 0103 R			mov al, cs:time[bx]		; Move second found nybble char to al
+ 01E1  CD 10				int 10h				; Print char to screen
+
+ 01E3  2E: 80 3E 0113 R			cmp cs:[switch], 0		; Check the clock to see if it is 24hr
+       00
+ 01E9  75 20				jne removeampm			; If it is jump to removing AM/PM
+
+ 01EB  B0 20				mov al, 20h			; Move a space char to al
+ 01ED  CD 10				int 10h				; Print char to screen
+
+ 01EF  2E: 80 3E 0114 R			cmp cs:[hourx], 0		; Check if time is in AM or PM
+       00
+ 01F5  75 0A				jne printpm			; Jump to printing PM if var is one
+ 01F7  B0 41				mov al, 41h			; Move to al the char A
+ 01F9  CD 10				int 10h				; Print char to the screen
+ 01FB  B0 4D				mov al, 4Dh			; Move to al the char D
+ 01FD  CD 10				int 10h				; Print char to the screen
+ 01FF  EB 14				jmp done			; Printing is done, exit
+ 0201				printpm:
+ 0201  B0 50				mov al, 50h			; Move to al the char P
+ 0203  CD 10				int 10h				; Print char to the screen
+ 0205  B0 4D				mov al, 4Dh			; Move to al the char M
+ 0207  CD 10				int 10h				; Print char to the screen
+ 0209  EB 0A				jmp done			; Printing is done, exit
+ 020B				removeampm:				; Remove remenents of 12 hour time
+ 020B  51				push cx				; Save value in CX
+ 020C  B9 0004				mov cx, 4			; Move to CX num of spaces to write
+ 020F  B0 20				mov al, 20h			; Move al, the space char
+ 0211					remove:				; Create loop for printing space
+ 0211  CD 10				  int 10h
+ 0213  E2 FC				  loop remove			; Call bios instruction to print
+ 0215				done:
+ 0215  5A				pop dx				; Restore all registers
+ 0216  59				pop cx
+ 0217  5B				pop bx
+ 0218  58				pop ax
+
+ 0219  8B E5				mov sp, bp
+ 021B  5D				pop bp
+ 021C  C2 0002				ret 2
+ 021F				OutClock ENDP
+
+ 021F				JumpCursor PROC
+					; IN: DH row, DL column
+					; Move the cursor on page 0.
+ 021F  50				push ax
+ 0220  53				push bx
+ 0221  B7 00				mov bh, 0
+ 0223  B8 0200				mov ax, 0200h
+ 0226  CD 10				int 10h
+ 0228  5B				pop bx
+ 0229  58				pop ax
+ 022A  C3				ret
+ 022B				JumpCursor ENDP
+
+ 022B				OutClockLoc PROC
+					; IN: 16 bit location [bp + 4]
+					; IN  16 bit value [bp + 6]
+					; (STDCALL)
+ 022B  55				push bp
+ 022C  8B EC				mov bp, sp
+
+ 022E  50				push ax
+ 022F  53				push bx
+ 0230  51				push cx
+ 0231  52				push dx
+
+ 0232  B7 00			 	mov bh, 0
+ 0234  B8 0300				mov ax, 0300h		; get cursor position
+ 0237  CD 10				int 10h
+ 0239  52				push dx			; remember it
+
+ 023A  8B 56 04				mov dx, [bp + 4]
+ 023D  E8 FFDF				call JumpCursor
+
+ 0240  FF 76 06				push [bp + 6]		; output the parameter
+ 0243  E8 FECF				call OutClock
+
+ 0246  5A				pop dx			; move the cursor back!
+ 0247  E8 FFD5				call JumpCursor
+
+ 024A  5A				pop dx
+ 024B  59				pop cx
+ 024C  5B				pop bx
+ 024D  58				pop ax
+
+ 024E  8B E5				mov sp, bp
+ 0250  5D				pop bp
+ 0251  C2 0004				ret 4
+ 0254				OutClockLoc ENDP
+
+ 0254				OutClockCorner PROC
+					; IN: 16 bit parameter
+ 0254  55				push bp
+ 0255  8B EC				mov bp, sp
+
+ 0257  50				push ax				; Push used registers to the stack
+ 0258  53				push bx
+ 0259  51				push cx
+ 025A  52				push dx
+
+ 025B  B7 00			 	mov bh, 0
+ 025D  B8 0300				mov ax, 0300h			; Get cursor position
+ 0260  CD 10				int 10h
+ 0262  52				push dx				; Remember it
+
+ 0263  B6 00				mov dh, 0			; Set row and column
+ 0265  B2 43				mov dl, 67
+ 0267  E8 FFB5				call JumpCursor
+ 026A  FF 76 04				push [bp + 4]			; Output the parameter
+ 026D  52				push dx
+ 026E  E8 FFBA				call OutClockLoc
+
+ 0271  5A				pop dx				; Move the cursor back!
+ 0272  E8 FFAA				call JumpCursor
+
+ 0275  5A				pop dx				; Restore registers
+ 0276  59				pop cx
+ 0277  5B				pop bx
+ 0278  58				pop ax
+
+ 0279  8B E5				mov sp, bp
+ 027B  5D				pop bp
+ 027C  C2 0002				ret 2
+ 027F				OutClockCorner ENDP
+
+ 027F 00000000			orig_08 dword ?
+ 0283 00000000			orig_09 dword ?
+ 0287 0000			counter word 0
+ 0289 00			showit	byte 0
+
+ 028A				handle08 PROC
+ 028A  9C				pushf				; Push flags
+ 028B  2E: FF 1E 027F R			call cs:[orig_08]
+
+ 0290  2E: 83 06 0287 R			add cs:[counter], 55		; Adding to get time every 55 milisecs
+       37
+ 0296  2E: 81 3E 0287 R			cmp cs:[counter], 1000		; Check if count has reached a sec
+       03E8
+ 029D  7E 1C				jle done			; if it hasnt, dont get the time
+ 029F  2E: 81 2E 0287 R			sub cs:[counter], 1000		; if it has, subtract to reset counter
+       03E8
+ 02A6				continue:				; and print clock
+ 02A6  2E: 80 3E 0289 R			cmp cs:[showit], 0		; Check to see whether to show clock
+       00
+ 02AC  75 0A				jne clear			; if showit is not 1, then clear clock
+ 02AE  2E: FF 36 0287 R			push cs:[counter]		; if not push the count parameter
+ 02B3  E8 FF9E				call OutClockCorner		; and display the clock
+ 02B6  EB 03				jmp done			; when the clock is displayed, exit
+ 02B8				clear:
+ 02B8  E8 006D				call clear_clock		; clock is toggled not to display
+ 02BB				done:
+ 02BB  CF				iret				; return to where you were before intr
+ 02BC				handle08 ENDP
+
+ 02BC				handle09 PROC
+ 02BC  50				push ax
+ 02BD  9C				pushf				; To simulate an interrupt
+ 02BE  2E: FF 1E 0283 R			call cs:[orig_09]
+ 02C3  B8 0000				mov ax, 0
+ 02C6  E4 60				in al, 60h			; Read the current key
+
+ 02C8				ctrld:					; First check to see if ctrl pressed
+ 02C8  3C 9D				cmp al, 9Dh			; If it was not released
+ 02CA  75 07				jne rightdown			; jump to next check point
+ 02CC  2E: F6 16 0113 R			not cs:[switch]			; if it was, change variable
+ 02D1  EB 53				jmp done			; exit function
+ 02D3				rightdown:
+ 02D3  3C 36				cmp al, 36h			; check for rshift pressed down
+ 02D5  75 08				jne rightup			; if it was not pressed, jmp to next
+ 02D7  2E: C6 06 0111 R			mov cs:[rshift], 1		; it it was, change rshift var
+       01
+ 02DD  EB 32				jmp check			; jmp to checking both shifts
+ 02DF				rightup:
+ 02DF  3C B6				cmp al, 0B6h			; check for rshift released
+ 02E1  75 08				jne leftdown			; if it was not released, jump to next
+ 02E3  2E: C6 06 0111 R			mov cs:[rshift], 2		; if it was change rshift var again
+       02
+ 02E9  EB 26				jmp check			; jump to checking both shifts
+ 02EB				leftdown:
+ 02EB  3C 2A				cmp al, 2Ah			; check for lshift pressed down
+ 02ED  75 08				jne leftup			; if it was not pressed, jmp to next
+ 02EF  2E: C6 06 0112 R			mov cs:[lshift], 1		; if it was, change lshift var
+       01
+ 02F5  EB 1A				jmp check			; jump to checking both shifts
+ 02F7				leftup:
+ 02F7  3C AA				cmp al, 0AAh			; check for lshift released
+ 02F9  75 08				jne other			; if it was not released, jmp to next
+ 02FB  2E: C6 06 0112 R			mov cs:[lshift], 2		; if it was change lshift var
+       02
+ 0301  EB 0E				jmp check			; jmp to checking both shifts
+ 0303				other:
+ 0303  2E: C6 06 0112 R			mov cs:[lshift], 0		; if neither left or right were pressed
+       00
+ 0309  2E: C6 06 0111 R			mov cs:[rshift], 0		; and released at the same time
+       00
+ 030F  EB 15				jmp done			; set both to 0 and exit
+ 0311				check:
+ 0311  2E: 80 3E 0112 R			cmp cs:[lshift], 1		; check to see if left was pressed
+       01
+ 0317  75 0D				jne done			; if not exit
+ 0319  2E: 80 3E 0111 R			cmp cs:[rshift], 1		; check to see if right was pressed
+       01
+ 031F  75 05				jne done			; if not exit
+ 0321				display:
+ 0321  2E: F6 16 0289 R			not cs:[showit]			; if it was toggle is initiated
+ 0326				done:
+ 0326  58				pop ax				; return to the point of interrupt
+ 0327  CF				iret
+ 0328				handle09 ENDP
+
+
+ 0328				clear_clock PROC
+ 0328  50				push ax				; Push used registeres to stack
+ 0329  53				push bx
+ 032A  51				push cx
+ 032B  52				push dx
+
+ 032C  B7 00				mov bh, 0			; Move to bh the page number
+ 032E  B8 0300				mov ax, 0300h			; use bios function to move the
+ 0331  CD 10				int 10h				; position of the cursor
+ 0333  52				push dx				; save the current cursor position
+
+ 0334  B6 00				mov dh, 0			; set row
+ 0336  B2 43				mov dl, 67			; set column
+ 0338  E8 FEE4				call JumpCursor			; move cursor to top right
+ 033B  B4 0E				mov ah, 0Eh			; prepare ax for printing
+ 033D  B0 00				mov al, 0
+ 033F  B9 000C				mov cx, 12			; move to cx number of spaces to print
+ 0342				space:
+ 0342  B0 20				mov al, 20h			; move space char to al
+ 0344  CD 10				int 10h				; print 11 spaces
+ 0346  E2 FA				loop space
+
+ 0348  5A				pop dx				; pop back orginal cursor position
+ 0349  E8 FED3				call JumpCursor			; move cursor back to orginal position
+
+ 034C  5A				pop dx				; Pop back registers and return
+ 034D  59				pop cx
+ 034E  5B				pop bx
+ 034F  58				pop ax
+ 0350  C3				ret
+ 0351				clear_clock ENDP
+
+
+				;   END OF RESIDENT PORTION!!!!!!!!!!!!!!!!!!!!!!!!
+ 0351				install:
+
+ 0351				install08 PROC
+ 0351  1E			 	push ds
+ 0352  06				push es
+ 0353  50				push ax
+ 0354  53				push bx
+ 0355  52				push dx
+
+					; before changing the vector, 
+					; get the old vector and save it!
+ 0356  B8 3508				mov ax, 3508h
+ 0359  CD 21				int 21h
+ 035B  2E: 89 1E 027F R			mov word ptr cs:[orig_08], bx
+ 0360  2E: 8C 06 0281 R			mov word ptr cs:[orig_08+2], es
+
+					; Now install the new 08 vector
+ 0365  0E				push cs				; put our code segment
+ 0366  1F				pop ds				; into ds
+ 0367  BA 028A R			mov dx, offset handle08		; with offset in dx
+ 036A  B8 2508				mov ax, 2508h			; 
+ 036D  CD 21				int 21h
+
+ 036F  5A				pop dx
+ 0370  5B				pop bx
+ 0371  58				pop ax
+ 0372  07				pop es
+ 0373  1F				pop ds
+ 0374  C3				ret
+ 0375				install08 ENDP
+
+ 0375				install09 PROC
+ 0375  1E			 	push ds
+ 0376  06				push es
+ 0377  50				push ax
+ 0378  53				push bx
+ 0379  52				push dx
+
+					; before changing the vector, 
+					; get the old vector and save it!
+ 037A  B8 3509				mov ax, 3509h
+ 037D  CD 21				int 21h
+ 037F  2E: 89 1E 0283 R			mov word ptr cs:[orig_09], bx
+ 0384  2E: 8C 06 0285 R			mov word ptr cs:[orig_09+2], es
+
+					; Now install the new 09 vector
+ 0389  0E				push cs				; put our code segment
+ 038A  1F				pop ds				; into ds
+ 038B  BA 02BC R			mov dx, offset handle09		; with offset in dx
+ 038E  B8 2509				mov ax, 2509h
+ 0391  CD 21				int 21h
+
+ 0393  5A				pop dx
+ 0394  5B				pop bx
+ 0395  58				pop ax
+ 0396  07				pop es
+ 0397  1F				pop ds
+ 0398  C3				ret
+ 0399				install09 ENDP
+
+ 0399				start:
+ 0399  E8 FFB5				call install08
+ 039C  E8 FFD6				call install09
+
+ 039F  BA 0000				mov dx, 0
+ 03A2  BA 0351 R			mov dx, offset install
+ 03A5  B1 04				mov cl, 4
+ 03A7  D3 EA				shr dx, cl			; dx is bytes / 16
+ 03A9  42				inc dx				; dx is paragraphs to reserve
+ 03AA  B8 3100				mov ax, 3100h
+ 03AD  CD 21				int 21h
+
+					;mov ax, 4c00h
+					;int 21h
+
+				END top
+
+
+
+
+Microsoft (R) Macro Assembler Version 6.11		    10/31/16 02:23:17
+clocktsr						     Symbols 2 - 1
+
+
+
+
+Segments and Groups:
+
+                N a m e                 Size     Length   Align   Combine Class
+
+DGROUP . . . . . . . . . . . . .	GROUP
+_TEXT  . . . . . . . . . . . . .	16 Bit	 03AF	  Word	  Public  'CODE'	
+_DATA  . . . . . . . . . . . . .	16 Bit	 0000	  Word	  Public  'DATA'	
+
+
+Procedures,  parameters and locals:
+
+                N a m e                 Type     Value    Attr
+
+JumpCursor . . . . . . . . . . .	P Near	 021F	  _TEXT	Length= 000C Public
+OutClockCorner . . . . . . . . .	P Near	 0254	  _TEXT	Length= 002B Public
+OutClockLoc  . . . . . . . . . .	P Near	 022B	  _TEXT	Length= 0029 Public
+OutClock . . . . . . . . . . . .	P Near	 0115	  _TEXT	Length= 010A Public
+  sethourx . . . . . . . . . . .	L Near	 015D	  _TEXT	
+  checkhr  . . . . . . . . . . .	L Near	 0163	  _TEXT	
+  miltime  . . . . . . . . . . .	L Near	 0178	  _TEXT	
+  printpm  . . . . . . . . . . .	L Near	 0201	  _TEXT	
+  removeampm . . . . . . . . . .	L Near	 020B	  _TEXT	
+  remove . . . . . . . . . . . .	L Near	 0211	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0215	  _TEXT	
+clear_clock  . . . . . . . . . .	P Near	 0328	  _TEXT	Length= 0029 Public
+  space  . . . . . . . . . . . .	L Near	 0342	  _TEXT	
+handle08 . . . . . . . . . . . .	P Near	 028A	  _TEXT	Length= 0032 Public
+  continue . . . . . . . . . . .	L Near	 02A6	  _TEXT	
+  clear  . . . . . . . . . . . .	L Near	 02B8	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 02BB	  _TEXT	
+handle09 . . . . . . . . . . . .	P Near	 02BC	  _TEXT	Length= 00C4 Public
+  ctrld  . . . . . . . . . . . .	L Near	 02C8	  _TEXT	
+  rightdown  . . . . . . . . . .	L Near	 02D3	  _TEXT	
+  rightup  . . . . . . . . . . .	L Near	 02DF	  _TEXT	
+  leftdown . . . . . . . . . . .	L Near	 02EB	  _TEXT	
+  leftup . . . . . . . . . . . .	L Near	 02F7	  _TEXT	
+  other  . . . . . . . . . . . .	L Near	 0303	  _TEXT	
+  check  . . . . . . . . . . . .	L Near	 0311	  _TEXT	
+  display  . . . . . . . . . . .	L Near	 0321	  _TEXT	
+  done . . . . . . . . . . . . .	L Near	 0326	  _TEXT	
+install08  . . . . . . . . . . .	P Near	 0351	  _TEXT	Length= 0024 Public
+install09  . . . . . . . . . . .	P Near	 0375	  _TEXT	Length= 0024 Public
+
+
+Symbols:
+
+                N a m e                 Type     Value    Attr
+
+@CodeSize  . . . . . . . . . . .	Number	 0000h	 
+@DataSize  . . . . . . . . . . .	Number	 0000h	 
+@Interface . . . . . . . . . . .	Number	 0000h	 
+@Model . . . . . . . . . . . . .	Number	 0001h	 
+@code  . . . . . . . . . . . . .	Text   	 DGROUP
+@data  . . . . . . . . . . . . .	Text   	 DGROUP
+@fardata?  . . . . . . . . . . .	Text   	 FAR_BSS
+@fardata . . . . . . . . . . . .	Text   	 FAR_DATA
+@stack . . . . . . . . . . . . .	Text   	 DGROUP
+colon  . . . . . . . . . . . . .	Byte	 010D	  _TEXT	
+counter  . . . . . . . . . . . .	Word	 0287	  _TEXT	
+hours  . . . . . . . . . . . . .	Byte	 010E	  _TEXT	
+hourx  . . . . . . . . . . . . .	Byte	 0114	  _TEXT	
+install  . . . . . . . . . . . .	L Near	 0351	  _TEXT	
+lshift . . . . . . . . . . . . .	Byte	 0112	  _TEXT	
+minutes  . . . . . . . . . . . .	Byte	 010F	  _TEXT	
+orig_08  . . . . . . . . . . . .	DWord	 027F	  _TEXT	
+orig_09  . . . . . . . . . . . .	DWord	 0283	  _TEXT	
+rshift . . . . . . . . . . . . .	Byte	 0111	  _TEXT	
+seconds  . . . . . . . . . . . .	Byte	 0110	  _TEXT	
+showit . . . . . . . . . . . . .	Byte	 0289	  _TEXT	
+start  . . . . . . . . . . . . .	L Near	 0399	  _TEXT	
+switch . . . . . . . . . . . . .	Byte	 0113	  _TEXT	
+time . . . . . . . . . . . . . .	Byte	 0103	  _TEXT	
+top  . . . . . . . . . . . . . .	L Near	 0100	  _TEXT	
+
+	   0 Warnings
+	   0 Errors

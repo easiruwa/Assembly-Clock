@@ -1,0 +1,74 @@
+Title clocktsr
+
+.8086
+.model tiny
+
+.code
+
+    org 100h
+
+top: jmp start
+
+hex byte "0123456789abcedf"
+
+Out16 Proc
+    push bp
+    mov bp, sp
+
+    push ax
+    push bx
+    push cx
+    push dx
+
+    mov dx, [bp+4]
+    mov cx, 4
+    mov ah, 0Eh
+L1:
+    push cx
+    mov cx, 4
+    rol dx, cl
+    pop cx
+    mov bx, dx
+    and bx, 000Fh
+    mov al, cs:hex[bx]
+    int 10h
+    loop L1
+
+    pop dx
+    pop cx
+    pop bx
+    pop ax
+
+    mov sp, bp
+    pop bp
+    ret 2
+Out16 ENDP
+
+JumpCursor PROC
+    push ax
+    push bx
+    mov bh, 0
+    mov ax, 0200h
+    int 10h
+    pop bx
+    pop ax
+    ret
+JumpCursor ENDP
+
+Out16Loc PROC
+    push bp
+    mov bp, sp
+
+    mov bh, 0
+    mov ax, 030h
+    int 10h
+    push dx
+
+    mov dx, [bp+4]
+    call JumpCursor
+
+OUT16Loc ENDP
+
+
+
+
